@@ -66,6 +66,11 @@ type Mutation {
 }
 
 
+type Mutation {
+  import_ocmi_mesures : ImportOcmiMesuresOutput
+}
+
+
 type Query {
   stat_available_mesures (
     departementId: Int
@@ -249,5 +254,10 @@ type EmailServiceMemberInvitationOutput {
 
 type TokenRequestOutput {
   result : String!
+}
+
+type ImportOcmiMesuresOutput {
+  en_cours : Int
+  eteinte : Int
 }
 

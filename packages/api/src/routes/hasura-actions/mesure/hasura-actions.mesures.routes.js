@@ -5,13 +5,23 @@ const actionsMesuresImporter = require("./mesures-import/actionsMesuresImporter"
 const checkImportMesuresParameters = require("./hasura-actions.mesures-import.checker");
 const hasuraActionErrorHandler = require("../../../middlewares/hasura-error-handler");
 const getMesures = require("../../../services/getMesures");
-const { Tis } = require("../../../models/Tis");
 const { Mesure } = require("../../../models/Mesure");
-const { isEnAttente } = require("@emjpm/core");
+const { OcmiMandataire } = require("../../../models/OcmiMandataire");
+const { LbUser } = require("../../../models/LbUser");
+const { isEnAttente, MESURE_PROTECTION_STATUS } = require("@emjpm/core");
 const { getEmailUserDatas } = require("../../../email/email-user-data");
 const {
   cancelReservationEmail,
 } = require("../../../email/cancel-reservation-email");
+const { Mandataire } = require("../../../models/Mandataire");
+const { Tis } = require("../../../models/Tis");
+const mesureStatesService = require("../../../services/updateMesureStates");
+const {
+  saveMesures,
+} = require("../../../controllers/editor/service/saveMesure");
+const fetchTribunaux = require("../../../controllers/editor/service/fetchTribunaux");
+const { MesureRessources } = require("../../../models/MesureRessources");
+const { MesureEtat } = require("../../../models/MesureEtat");
 
 const router = express.Router();
 
@@ -132,4 +142,82 @@ router.post("/delete", async function (req, res) {
   res.json({ success: true });
 });
 
+router.post("/import-ocmi-mesures", async (req, res) => {
+  const { userId } = req.user;
+
+  const mandataire = await Mandataire.query().findOne({ user_id: userId });
+
+  const { id: mandataireId, lb_user_id: lbUserId } = mandataire;
+
+  await deleteAllMesures(mandataireId);
+
+  const { siret } = await LbUser.query().findById(lbUserId);
+
+  const { mesures } = await OcmiMandataire.query().findOne({
+    siret,
+  });
+
+  // check tribunal_siret validity and load tis
+  const { errors: tiErrors, tribunaux } = await fetchTribunaux(mesures);
+  if (tiErrors.length > 0) {
+    return res.status(422).json({ tiErrors });
+  }
+
+  const allMesureDatas = mesures.map((mesure) => ({
+    datas: {
+      ...mesure,
+      etats: mesure.etats.map((etat) => ({
+        ...etat,
+        date_changement_etat: new Date(etat.date_changement_etat),
+      })),
+    },
+    serviceOrMandataire: mandataire,
+    ti: findTribunal(tribunaux, mesure.tribunal_siret),
+    type: "mandataire",
+  }));
+
+  await saveMesures(allMesureDatas);
+
+  await mesureStatesService.updateMandataireMesureStates(mandataireId);
+
+  /*
+  // In case of errors:
+  return res.status(400).json({
+    message: "error happened"
+  })
+  */
+
+  // success
+  return res.json({
+    en_cours: "0",
+    eteinte: "0",
+  });
+});
+
 module.exports = router;
+
+function findTribunal(tribunaux, tribunalSiret) {
+  return tribunaux.find((t) => t.siret === tribunalSiret);
+}
+
+async function deleteAllMesures(mandataireId) {
+  const mesureIdsQuery = Mesure.query()
+    .select("id")
+    .where({ mandataire_id: mandataireId })
+    .andWhere("status", "in", [
+      MESURE_PROTECTION_STATUS.en_cours,
+      MESURE_PROTECTION_STATUS.eteinte,
+    ]);
+
+  await MesureEtat.query().delete().whereIn("mesure_id", mesureIdsQuery);
+
+  await MesureRessources.query().delete().whereIn("mesure_id", mesureIdsQuery);
+
+  await Mesure.query()
+    .delete()
+    .where({ mandataire_id: mandataireId })
+    .andWhere("status", "in", [
+      MESURE_PROTECTION_STATUS.en_cours,
+      MESURE_PROTECTION_STATUS.eteinte,
+    ]);
+}

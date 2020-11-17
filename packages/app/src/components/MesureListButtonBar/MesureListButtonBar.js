@@ -4,10 +4,15 @@ import { Box, Flex } from "rebass";
 import { getUserBasePath } from "../../constants";
 import { LinkButton } from "../Commons";
 import { MesureExportExcelButton } from "../MesureExportExcelButton";
+import { MesureImportOcmiButton } from "../MesureImportOcmiButton";
 import { UserContext } from "../UserContext";
 
 const MesureListButtonBar = () => {
-  const { type } = useContext(UserContext);
+  const {
+    type,
+    mandataire: { lb_user = {} },
+  } = useContext(UserContext);
+  const { ocmi_mandataire } = lb_user;
 
   const path = getUserBasePath({ type });
 
@@ -24,6 +29,7 @@ const MesureListButtonBar = () => {
             Importez vos mesures
           </LinkButton>
         </Box>
+        {ocmi_mandataire && <MesureImportOcmiButton ml={1} />}
         <MesureExportExcelButton ml={1} mr={2} />
       </Flex>
     </Box>

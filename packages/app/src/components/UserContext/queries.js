@@ -230,6 +230,9 @@ export const MANDATAIRE_USERS = gql`
               code
             }
           }
+          ocmi_mandataire {
+            siret
+          }
         }
       }
     }
